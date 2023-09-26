@@ -1,2 +1,5 @@
 flask
 python-dotenv
+beautifulsoup4
+pandas
+pydantic
