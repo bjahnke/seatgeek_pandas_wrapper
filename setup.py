@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="seatgeek_pandas_wrapper",
-    version="0.0.0.1",
+    version="0.0.0.2",
     packages=["env", "src/scalpyr"],
     url="",
     license="",

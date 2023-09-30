@@ -181,10 +181,16 @@ class ScalpyrPro(Scalpyr):
         return lookup[req_type]({"id": ids})
 
     def get_events_by(
-        self, req_type: typing.Literal["performers", "venue"], ids: IdList
+        self,
+        req_type: typing.Literal["performers", "venue"],
+        ids: IdList,
+        per_page: int,
+        page: int,
     ) -> pd.DataFrame:
         """
         Returns a dataframe of events for a given list of performer or venue ids
+        :param page:
+        :param per_page:
         :param req_type:
         :param ids:
         :return:
@@ -198,6 +204,7 @@ class ScalpyrPro(Scalpyr):
         return self.get_events(
             {
                 lookup_field: ids,
-                "per_page": 2500,
+                "per_page": per_page,
+                "page": page,
             }
         )
