@@ -1,3 +1,4 @@
+import math
 import typing
 from src.scalpyr.scalpyr import Scalpyr
 import pandas as pd
@@ -81,7 +82,9 @@ class ScalpyrPro(Scalpyr):
                 ],
             )
 
-    def _send_request(self, req_type=None, req_args=None, req_id=None) -> pd.DataFrame:
+    def _send_request(
+        self, req_type=None, req_args=None, req_id=None
+    ) -> typing.Tuple[pd.DataFrame, typing.Dict]:
         """
         Sends a request to the SeatGeek API and returns a dataframe of the response
         :param req_type:
@@ -95,25 +98,14 @@ class ScalpyrPro(Scalpyr):
             raise ApiException(response)
         try:
             columns = getattr(self.sg_data_structure, req_type)
-            df = pd.DataFrame.from_dict(response[req_type])
-            df = df[columns]
+
         except KeyError:
             raise ApiException(response)
-        return df
 
-    def get_events_by_performers(self, performers: pd.DataFrame) -> pd.DataFrame:
-        """
-        Returns a dataframe of events for a given list of performer ids
-        :param performers:
-        :return:
-        """
-        return self.get_events(
-            {
-                "performers.id": ",".join(performers.id.astype(str)),
-                "per_page": performers.num_upcoming_events.sum() * 2,
-                "type": "concert",
-            }
-        )
+        df = pd.DataFrame.from_dict(response[req_type])
+        df = df[columns]
+        response[req_type] = df
+        return response
 
     def get_venue_ids(self, *venues: str) -> pd.DataFrame:
         """
@@ -145,20 +137,6 @@ class ScalpyrPro(Scalpyr):
         # return a dataframe with the venue names and ids as columns
         return pd.concat(all_venue_data, ignore_index=True)
 
-    def get_events_by_venues(self, venues: pd.DataFrame) -> pd.DataFrame:
-        """
-        Returns a dataframe of events for a given list of venue ids
-        :param venues:
-        :return:
-        """
-        return self.get_events(
-            {
-                "venue.id": ",".join(venues.id.astype(str)),
-                "per_page": venues.num_upcoming_events.sum() * 2,
-                "type": "concert",
-            }
-        )
-
     def get_by_id(
         self, req_type: typing.Literal["events", "performers", "venues"], ids: IdList
     ) -> pd.DataFrame:
@@ -182,29 +160,52 @@ class ScalpyrPro(Scalpyr):
 
     def get_events_by(
         self,
-        req_type: typing.Literal["performers", "venue"],
+        req_type: typing.Literal["performers", "venue", "events"],
         ids: IdList,
-        per_page: int,
-        page: int,
+        per_page: int = 1000,
+        event_type=None,
     ) -> pd.DataFrame:
         """
-        Returns a dataframe of events for a given list of performer or venue ids
-        :param page:
+        Returns a dataframe of events for all given list of performer or venue ids.
+        :param event_type:
         :param per_page:
         :param req_type:
         :param ids:
         :return:
         """
+
         if isinstance(ids, pd.Series):
             ids = ",".join(ids.astype(str))
         else:
             ids = ",".join(ids)
+        if req_type == "events":
+            lookup_field = "id"
+        else:
+            lookup_field = f"{req_type}.id"
 
-        lookup_field = f"{req_type}.id"
-        return self.get_events(
-            {
-                lookup_field: ids,
-                "per_page": per_page,
-                "page": page,
-            }
+        resp = self._get_events_by(
+            lookup_field, ids, per_page, 1, event_type=event_type
         )
+        total_records = resp["meta"]["total"]
+        per_page = resp["meta"]["per_page"]
+        total_pages = math.ceil(total_records / per_page)
+        events_tables = [resp["events"]]
+        page_num = 2
+        while page_num <= total_pages:
+            resp = self._get_events_by(
+                lookup_field, ids, per_page, page_num, event_type=event_type
+            )
+            events_tables.append(resp["events"])
+            page_num += 1
+
+        resp["events"] = pd.concat(events_tables)
+        return resp
+
+    def _get_events_by(self, lookup_field, ids, per_page, page_num, event_type=None):
+        """small helper for get_events_by"""
+        req = dict() if event_type is None else {"type": event_type}
+        req[lookup_field] = ids
+        req["per_page"] = per_page
+        req["page"] = page_num
+
+        return self.get_events(req)
